@@ -1,0 +1,25 @@
+# A project translates into one executable or library.
+project:
+
+  processor:
+    # This project is executed in non-secure mode
+    trustzone: non-secure
+
+  groups:
+    - group: Source Files
+      files:
+        - file: main.c
+        - file: $cmse-lib(Secure)$
+
+  # List components to use for your application.
+  # A software component is a re-usable unit that may be configurable.
+  components:
+    - component: ARM::CMSIS:CORE
+    - component: Device:Startup
+
+  # List executable file formats to be generated.
+  output:
+    type:
+      - elf
+      - hex
+      - map
