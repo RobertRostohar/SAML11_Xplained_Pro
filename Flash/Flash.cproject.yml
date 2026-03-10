@@ -1,0 +1,35 @@
+# A project translates into one executable or library.
+project:
+
+  setups:
+    - setup: Project setup
+      for-compiler: AC6
+      misc:
+        - C-CPP:
+          - -fropi
+          - -frwpi
+        - Link:
+          - --entry=Init
+          - --keep=FlashDevice
+
+  groups:
+    - group: Source Files
+      files:
+        - file: FlashDev.c
+        - file: FlashPrg.c
+        - file: FlashStk.s
+
+  # List components to use for your application.
+  # A software component is a re-usable unit that may be configurable.
+  components:
+    - component: ARM::CMSIS:CORE
+
+  linker:
+    - script: Target.lin
+      for-compiler: AC6
+
+  # List executable file formats to be generated.
+  output:
+    type:
+      - elf
+      - map
