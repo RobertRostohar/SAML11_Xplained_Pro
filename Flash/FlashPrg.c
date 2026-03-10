@@ -21,8 +21,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
-#include "FlashOS.h"           // FlashOS Structures
+
+#include "RTE_Components.h"
+#include CMSIS_device_header
+
+#include "FlashOS.h"            // FlashOS Structures
 
 /* 
    Mandatory Flash Programming Functions (Called by FlashOS):
@@ -50,6 +53,68 @@
 */
 
 
+static void PrepareFlashOperation (void) {
+  nvmctrl_registers_t *nvmctrl;
+  pac_registers_t *pac;
+  uint8_t dal;
+
+  // Select NVMCTRL and PAC Register Base on Debug Access Level
+  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
+  if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
+    nvmctrl = NVMCTRL_SEC_REGS;
+    pac = PAC_SEC_REGS;
+  } else {
+    nvmctrl = NVMCTRL_REGS;
+    pac = PAC_REGS;
+  }
+
+  // PAC: Disable Write Protection for NVMCTRL
+  pac->PAC_WRCTRL = PAC_WRCTRL_PERID(34) |
+                    PAC_WRCTRL_KEY(PAC_WRCTRL_KEY_CLEAR_Val);
+
+  // NVMCTRL: Set Read Wait States and Disable Cache
+  nvmctrl->NVMCTRL_CTRLB = NVMCTRL_CTRLB_RWS(15) |
+                           NVMCTRL_CTRLB_CACHEDIS_Msk;
+
+  // NVMCTRL: Set Manual Write
+  nvmctrl->NVMCTRL_CTRLC = NVMCTRL_CTRLC_MANW_Msk;
+}
+
+
+static void ClearFlashPageBuffer (void) {
+  nvmctrl_registers_t *nvmctrl;
+  uint8_t dal;
+
+  // Select NVMCTRL Register Base on Debug Access Level
+  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
+  if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
+    nvmctrl = NVMCTRL_SEC_REGS;
+  } else {
+    nvmctrl = NVMCTRL_REGS;
+  }
+
+  // Only clear page buffer if necessary. PBC commands can otherwise fail.
+  if ((nvmctrl->NVMCTRL_STATUS & NVMCTRL_STATUS_LOAD_Msk) == 0U) {
+    return;
+  }
+
+  // NVMCTRL: Clear all errors and DONE flag
+  nvmctrl->NVMCTRL_INTFLAG = NVMCTRL_INTFLAG_DONE_Msk  |
+                             NVMCTRL_INTFLAG_PROGE_Msk |
+                             NVMCTRL_INTFLAG_LOCKE_Msk |
+                             NVMCTRL_INTFLAG_NVME_Msk  |
+                             NVMCTRL_INTFLAG_KEYE_Msk;
+
+  // NVMCTRL: Clear Page Buffer
+  nvmctrl->NVMCTRL_CTRLA = NVMCTRL_CTRLA_CMD(NVMCTRL_CTRLA_CMD_PBC_Val) |
+                           NVMCTRL_CTRLA_CMDEX(NVMCTRL_CTRLA_CMDEX_KEY_Val);
+
+  // NVMCTRL: Wait for LOAD and READY flag
+  while ((nvmctrl->NVMCTRL_STATUS & (NVMCTRL_STATUS_LOAD_Msk  |
+                                     NVMCTRL_STATUS_READY_Msk)) != NVMCTRL_STATUS_READY_Msk);
+}
+
+
 /*
  *  Initialize Flash Programming Functions
  *    Parameter:      adr:  Device Base Address
@@ -60,8 +125,21 @@
 
 int Init (unsigned long adr, unsigned long clk, unsigned long fnc) {
 
-  /* Add your Code */
-  return (0);                                  // Finished without Errors
+  switch (fnc) {
+    case 1: // Erase
+      PrepareFlashOperation();
+      break;
+    case 2: // Program
+      PrepareFlashOperation();
+      ClearFlashPageBuffer();
+      break;
+    case 3: // Verify
+      break;
+    default:
+      return (1);               // Unsupported Function Code
+  }
+
+  return (0);                   // Finished without Errors
 }
 
 
@@ -72,9 +150,7 @@ int Init (unsigned long adr, unsigned long clk, unsigned long fnc) {
  */
 
 int UnInit (unsigned long fnc) {
-
-  /* Add your Code */
-  return (0);                                  // Finished without Errors
+  return (0);                   // Finished without Errors
 }
 
 
@@ -83,11 +159,9 @@ int UnInit (unsigned long fnc) {
  *    Return Value:   0 - OK,  1 - Failed
  */
 
-int EraseChip (void) {
-
-  /* Add your Code */
-  return (0);                                  // Finished without Errors
-}
+// int EraseChip (void) {
+//   return (0);                   // Finished without Errors
+// }
 
 
 /*
@@ -97,9 +171,50 @@ int EraseChip (void) {
  */
 
 int EraseSector (unsigned long adr) {
+  nvmctrl_registers_t *nvmctrl;
+  uint8_t dal;
 
-  /* Add your Code */
-  return (0);                                  // Finished without Errors
+  // Select NVMCTRL Register Base on Debug Access Level
+  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
+  if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
+    nvmctrl = NVMCTRL_SEC_REGS;
+  } else {
+    nvmctrl = NVMCTRL_REGS;
+  }
+
+  // NVMCTRL: Clear all errors and DONE flag
+  nvmctrl->NVMCTRL_INTFLAG = NVMCTRL_INTFLAG_DONE_Msk  |
+                             NVMCTRL_INTFLAG_PROGE_Msk |
+                             NVMCTRL_INTFLAG_LOCKE_Msk |
+                             NVMCTRL_INTFLAG_NVME_Msk  |
+                             NVMCTRL_INTFLAG_KEYE_Msk;
+
+  if (dal < DSU_STATUSB_DAL_FULL_DEBUG) {
+    // Indirect addressing
+    ClearFlashPageBuffer();
+    *((unsigned long *)(adr)) = 0xFFFFFFFFU;
+  } else {
+    // Direct addressing
+    nvmctrl->NVMCTRL_ADDR = adr;
+  }
+
+  // NVMCTRL: Erase Row Command
+  nvmctrl->NVMCTRL_CTRLA = NVMCTRL_CTRLA_CMD(NVMCTRL_CTRLA_CMD_ER_Val) |
+                           NVMCTRL_CTRLA_CMDEX(NVMCTRL_CTRLA_CMDEX_KEY_Val);
+
+  // NVMCTRL: Wait for READY flag
+  while ((nvmctrl->NVMCTRL_STATUS & NVMCTRL_STATUS_READY_Msk) == 0U);
+
+  // NVMCTRL: Check for Errors and DONE flag
+  if ((nvmctrl->NVMCTRL_INTFLAG & (NVMCTRL_INTFLAG_DONE_Msk  | 
+                                   NVMCTRL_INTFLAG_PROGE_Msk |
+                                   NVMCTRL_INTFLAG_LOCKE_Msk |
+                                   NVMCTRL_INTFLAG_NVME_Msk  |
+                                   NVMCTRL_INTFLAG_KEYE_Msk)) != NVMCTRL_INTFLAG_DONE_Msk) {
+    return (1);                 // Failed to Erase Row
+  }
+
+  return (0);                   // Finished without Errors
 }
 
 
@@ -112,7 +227,49 @@ int EraseSector (unsigned long adr) {
  */
 
 int ProgramPage (unsigned long adr, unsigned long sz, unsigned char *buf) {
+  nvmctrl_registers_t *nvmctrl;
+  uint8_t dal;
 
-  /* Add your Code */
-  return (0);                                  // Finished without Errors
+  // Select NVMCTRL Register Base on Debug Access Level
+  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
+  if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
+    nvmctrl = NVMCTRL_SEC_REGS;
+  } else {
+    nvmctrl = NVMCTRL_REGS;
+  }
+
+  sz = (sz + 3U) & ~3U;         // Align size to 4 bytes
+
+  // Write Page Data
+  while (sz) {
+    *((unsigned long *)(adr)) = *((unsigned long *)buf);
+    adr += 4U;
+    buf += 4U;
+    sz  -= 4U;
+  }
+
+  // NVMCTRL: Clear all errors and DONE flag
+  nvmctrl->NVMCTRL_INTFLAG = NVMCTRL_INTFLAG_DONE_Msk  |
+                             NVMCTRL_INTFLAG_PROGE_Msk |
+                             NVMCTRL_INTFLAG_LOCKE_Msk |
+                             NVMCTRL_INTFLAG_NVME_Msk  |
+                             NVMCTRL_INTFLAG_KEYE_Msk;
+
+  // NVMCTRL: Write Page Command
+  nvmctrl->NVMCTRL_CTRLA = NVMCTRL_CTRLA_CMD(NVMCTRL_CTRLA_CMD_WP_Val) |
+                           NVMCTRL_CTRLA_CMDEX(NVMCTRL_CTRLA_CMDEX_KEY_Val);
+
+  // NVMCTRL: Wait for READY flag
+  while ((nvmctrl->NVMCTRL_STATUS & NVMCTRL_STATUS_READY_Msk) == 0U);
+
+  // NVMCTRL: Check for Errors and DONE flag
+  if ((nvmctrl->NVMCTRL_INTFLAG & (NVMCTRL_INTFLAG_DONE_Msk  | 
+                                   NVMCTRL_INTFLAG_PROGE_Msk |
+                                   NVMCTRL_INTFLAG_LOCKE_Msk |
+                                   NVMCTRL_INTFLAG_NVME_Msk  |
+                                   NVMCTRL_INTFLAG_KEYE_Msk)) != NVMCTRL_INTFLAG_DONE_Msk) {
+    return (1);                 // Failed to Program Page
+  }
+
+  return (0);                   // Finished without Errors
 }

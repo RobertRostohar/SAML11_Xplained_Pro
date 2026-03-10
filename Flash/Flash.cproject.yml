@@ -11,6 +11,10 @@ project:
         - Link:
           - --entry=Init
           - --keep=FlashDevice
+          - --keep=Init
+          - --keep=UnInit
+          - --keep=ProgramPage
+          - --keep=EraseSector
 
   groups:
     - group: Source Files
