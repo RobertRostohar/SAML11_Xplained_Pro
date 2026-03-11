@@ -53,19 +53,24 @@
 */
 
 
+// Global variables
+static uint8_t dal;
+static pac_registers_t *pac;
+static nvmctrl_registers_t *nvmctrl;
+
+
 static void PrepareFlashOperation (void) {
-  nvmctrl_registers_t *nvmctrl;
-  pac_registers_t *pac;
-  uint8_t dal;
+
+  // Determine Debug Access Level
+  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
 
   // Select NVMCTRL and PAC Register Base on Debug Access Level
-  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
   if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
-    nvmctrl = NVMCTRL_SEC_REGS;
     pac = PAC_SEC_REGS;
+    nvmctrl = NVMCTRL_SEC_REGS;
   } else {
-    nvmctrl = NVMCTRL_REGS;
     pac = PAC_REGS;
+    nvmctrl = NVMCTRL_REGS;
   }
 
   // PAC: Disable Write Protection for NVMCTRL
@@ -82,16 +87,6 @@ static void PrepareFlashOperation (void) {
 
 
 static void ClearFlashPageBuffer (void) {
-  nvmctrl_registers_t *nvmctrl;
-  uint8_t dal;
-
-  // Select NVMCTRL Register Base on Debug Access Level
-  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
-  if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
-    nvmctrl = NVMCTRL_SEC_REGS;
-  } else {
-    nvmctrl = NVMCTRL_REGS;
-  }
 
   // Only clear page buffer if necessary. PBC commands can otherwise fail.
   if ((nvmctrl->NVMCTRL_STATUS & NVMCTRL_STATUS_LOAD_Msk) == 0U) {
@@ -109,7 +104,7 @@ static void ClearFlashPageBuffer (void) {
   nvmctrl->NVMCTRL_CTRLA = NVMCTRL_CTRLA_CMD(NVMCTRL_CTRLA_CMD_PBC_Val) |
                            NVMCTRL_CTRLA_CMDEX(NVMCTRL_CTRLA_CMDEX_KEY_Val);
 
-  // NVMCTRL: Wait for LOAD and READY flag
+  // NVMCTRL: Wait for cleared LOAD and READY flag
   while ((nvmctrl->NVMCTRL_STATUS & (NVMCTRL_STATUS_LOAD_Msk  |
                                      NVMCTRL_STATUS_READY_Msk)) != NVMCTRL_STATUS_READY_Msk);
 }
@@ -171,16 +166,6 @@ int UnInit (unsigned long fnc) {
  */
 
 int EraseSector (unsigned long adr) {
-  nvmctrl_registers_t *nvmctrl;
-  uint8_t dal;
-
-  // Select NVMCTRL Register Base on Debug Access Level
-  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
-  if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
-    nvmctrl = NVMCTRL_SEC_REGS;
-  } else {
-    nvmctrl = NVMCTRL_REGS;
-  }
 
   // NVMCTRL: Clear all errors and DONE flag
   nvmctrl->NVMCTRL_INTFLAG = NVMCTRL_INTFLAG_DONE_Msk  |
@@ -227,16 +212,6 @@ int EraseSector (unsigned long adr) {
  */
 
 int ProgramPage (unsigned long adr, unsigned long sz, unsigned char *buf) {
-  nvmctrl_registers_t *nvmctrl;
-  uint8_t dal;
-
-  // Select NVMCTRL Register Base on Debug Access Level
-  dal = (DSU_EXT_REGS->DSU_STATUSB & DSU_STATUSB_DAL_Msk) >> DSU_STATUSB_DAL_Pos;
-  if (dal == DSU_STATUSB_DAL_FULL_DEBUG) {
-    nvmctrl = NVMCTRL_SEC_REGS;
-  } else {
-    nvmctrl = NVMCTRL_REGS;
-  }
 
   sz = (sz + 3U) & ~3U;         // Align size to 4 bytes
 
