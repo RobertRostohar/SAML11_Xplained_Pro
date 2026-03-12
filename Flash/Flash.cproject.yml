@@ -16,6 +16,9 @@ project:
           - --keep=ProgramPage
           - --keep=EraseSector
 
+  define:
+    - USE_VIRTUAL_PAGE
+
   groups:
     - group: Source Files
       files:
@@ -37,3 +40,12 @@ project:
     type:
       - elf
       - map
+
+  # Post-build commands
+  executes:
+    - execute: copy_flm
+      run: ${CMAKE_COMMAND} -E copy $input$ $output$
+      input:
+        - $OutDir()$/Flash.axf
+      output:
+        - $Dname$.FLM

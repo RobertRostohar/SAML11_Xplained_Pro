@@ -53,6 +53,11 @@
 */
 
 
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 64U
+#endif
+
+
 // Global variables
 static uint8_t dal;
 static pac_registers_t *pac;
@@ -212,39 +217,57 @@ int EraseSector (unsigned long adr) {
  */
 
 int ProgramPage (unsigned long adr, unsigned long sz, unsigned char *buf) {
+  uint32_t cnt;
 
   sz = (sz + 3U) & ~3U;         // Align size to 4 bytes
 
-  // Write Page Data
-  while (sz) {
-    *((unsigned long *)(adr)) = *((unsigned long *)buf);
-    adr += 4U;
-    buf += 4U;
-    sz  -= 4U;
-  }
+#ifdef USE_VIRTUAL_PAGE
+  do {
+    if (sz > PAGE_SIZE) {
+      cnt = PAGE_SIZE;
+      sz -= PAGE_SIZE;
+    } else {
+      cnt = sz;
+      sz  = 0U;
+    }
+#else
+  cnt = sz;
+#endif
 
-  // NVMCTRL: Clear all errors and DONE flag
-  nvmctrl->NVMCTRL_INTFLAG = NVMCTRL_INTFLAG_DONE_Msk  |
-                             NVMCTRL_INTFLAG_PROGE_Msk |
-                             NVMCTRL_INTFLAG_LOCKE_Msk |
-                             NVMCTRL_INTFLAG_NVME_Msk  |
-                             NVMCTRL_INTFLAG_KEYE_Msk;
+    // Write Page Data
+    while (cnt != 0U) {
+      *((unsigned long *)(adr)) = *((unsigned long *)buf);
+      adr += 4U;
+      buf += 4U;
+      cnt -= 4U;
+    }
+  
+    // NVMCTRL: Clear all errors and DONE flag
+    nvmctrl->NVMCTRL_INTFLAG = NVMCTRL_INTFLAG_DONE_Msk  |
+                               NVMCTRL_INTFLAG_PROGE_Msk |
+                               NVMCTRL_INTFLAG_LOCKE_Msk |
+                               NVMCTRL_INTFLAG_NVME_Msk  |
+                               NVMCTRL_INTFLAG_KEYE_Msk;
+  
+    // NVMCTRL: Write Page Command
+    nvmctrl->NVMCTRL_CTRLA = NVMCTRL_CTRLA_CMD(NVMCTRL_CTRLA_CMD_WP_Val) |
+                             NVMCTRL_CTRLA_CMDEX(NVMCTRL_CTRLA_CMDEX_KEY_Val);
+  
+    // NVMCTRL: Wait for READY flag
+    while ((nvmctrl->NVMCTRL_STATUS & NVMCTRL_STATUS_READY_Msk) == 0U);
+  
+    // NVMCTRL: Check for Errors and DONE flag
+    if ((nvmctrl->NVMCTRL_INTFLAG & (NVMCTRL_INTFLAG_DONE_Msk  | 
+                                     NVMCTRL_INTFLAG_PROGE_Msk |
+                                     NVMCTRL_INTFLAG_LOCKE_Msk |
+                                     NVMCTRL_INTFLAG_NVME_Msk  |
+                                     NVMCTRL_INTFLAG_KEYE_Msk)) != NVMCTRL_INTFLAG_DONE_Msk) {
+      return (1);               // Failed to Program Page
+    }
 
-  // NVMCTRL: Write Page Command
-  nvmctrl->NVMCTRL_CTRLA = NVMCTRL_CTRLA_CMD(NVMCTRL_CTRLA_CMD_WP_Val) |
-                           NVMCTRL_CTRLA_CMDEX(NVMCTRL_CTRLA_CMDEX_KEY_Val);
-
-  // NVMCTRL: Wait for READY flag
-  while ((nvmctrl->NVMCTRL_STATUS & NVMCTRL_STATUS_READY_Msk) == 0U);
-
-  // NVMCTRL: Check for Errors and DONE flag
-  if ((nvmctrl->NVMCTRL_INTFLAG & (NVMCTRL_INTFLAG_DONE_Msk  | 
-                                   NVMCTRL_INTFLAG_PROGE_Msk |
-                                   NVMCTRL_INTFLAG_LOCKE_Msk |
-                                   NVMCTRL_INTFLAG_NVME_Msk  |
-                                   NVMCTRL_INTFLAG_KEYE_Msk)) != NVMCTRL_INTFLAG_DONE_Msk) {
-    return (1);                 // Failed to Program Page
-  }
+#ifdef USE_VIRTUAL_PAGE
+  } while (sz != 0U);
+#endif
 
   return (0);                   // Finished without Errors
 }

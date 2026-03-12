@@ -21,17 +21,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
 #include "FlashOS.h"           // FlashOS Structures
 
-
+#ifdef __SAML11E16A__
 struct FlashDevice const FlashDevice  =  {
    FLASH_DRV_VERS,             // Driver Version, do not modify!
    "ATSAML11E16A 64kB Flash",  // Device Name 
    ONCHIP,                     // Device Type
    0x00000000,                 // Device Start Address
    0x00010000,                 // Device Size in Bytes (64kB)
+#ifdef USE_VIRTUAL_PAGE
+   256,                        // Virtual Programming Page Size
+#else
    64,                         // Programming Page Size
+#endif
    0,                          // Reserved, must be 0
    0xFF,                       // Initial Content of Erased Memory
    100,                        // Program Page Timeout 100 mSec
@@ -41,3 +45,4 @@ struct FlashDevice const FlashDevice  =  {
    0x000100, 0x000000,         // Sector Size 256B (256 Sectors)
    SECTOR_END
 };
+#endif
